@@ -1,0 +1,11 @@
+[package]
+name = "server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+exchange = { path = "../exchange" }
+protocol = { path = "../protocol" }
+tungstenite = "0.28"
+bus = "2.4"
+rmp-serde = "1.3"
