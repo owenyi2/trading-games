@@ -51,7 +51,6 @@ async def sender(ws):
                         }
                     }
                 pack = msgpack.packb(message) 
-                print(pack)
                 await ws.send(pack)
             except:
                 continue

@@ -26,14 +26,16 @@ pub struct ClientMessage {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerMessage {
-    Event(ExchangeEvent),
-    // Private(ExchangePrivateMessage),
+    Event(u64, ExchangeEvent),
+    Private(u64, ExchangePrivateMessage),
     System(SystemMessage),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum SystemMessage {
     ExchangeAdded { exchange_id: u64 },
+    AccountId { account_id: u64 },
+    End,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -57,10 +59,10 @@ pub enum ExchangeEvent {
     },
 }
 
-// #[derive(Serialize, Deserialize, Clone)]
-// pub enum ExchangePrivateMessage {
-//     InsertConfirm {
-//         client_order_id: u64,
-//         id: ExchangeEventId,
-//     },
-// }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ExchangePrivateMessage {
+    InsertConfirm {
+        client_order_id: u64,
+        order_id: OrderId,
+    },
+}

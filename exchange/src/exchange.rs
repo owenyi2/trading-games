@@ -19,7 +19,7 @@ pub trait Broadcaster {
 
 pub struct Exchange<Broadcaster> {
     order_book: OrderBook,
-    broadcaster: Broadcaster,
+    pub broadcaster: Broadcaster,
     receiver: mpsc::Receiver<Message>,
 }
 
@@ -46,8 +46,9 @@ impl<B: Broadcaster> Exchange<B> {
                         account_id,
                         order_id,
                     } => {
-                        // if let Some(order) = self.order_book.get_order(order_id) && order.account_id == account_id {
-                        if let Some(order) = self.order_book.get_order(order_id) {
+                        if let Some(order) = self.order_book.get_order(order_id)
+                            && order.account_id() == account_id
+                        {
                             self.broadcaster.broadcast_cancel(order, &message);
                             self.order_book.remove_order(
                                 order_id,

@@ -230,6 +230,10 @@ impl Order {
     pub fn order_id(&self) -> Quantity {
         self.order_id
     }
+    #[inline]
+    pub fn account_id(&self) -> AccountId {
+        self.account_id
+    }
 
     pub fn new_order(account_id: AccountId, price: Price, qty: Quantity, side: Side) -> Self {
         static COUNTER: atomic::AtomicU64 = atomic::AtomicU64::new(0);
