@@ -3,6 +3,12 @@ import websockets
 import sys
 import msgpack
 import itertools
+from dotenv import load_dotenv
+
+import os
+
+load_dotenv()
+WS_SECRET_KEY = os.getenv("WS_SECRET_KEY")
 
 client_id = 69
 order_id_counter = itertools.count(1)  # auto-increment order IDs
@@ -57,7 +63,7 @@ async def sender(ws):
 
 async def main():
     uri = "ws://localhost:8080"  # Change to your websocket server
-    async with websockets.connect(uri) as ws:
+    async with websockets.connect(uri, additional_headers = { "ws_secret_key": WS_SECRET_KEY }) as ws:
         print(f"Connected to {uri}")
         await asyncio.gather(
             receiver(ws),

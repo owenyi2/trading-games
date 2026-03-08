@@ -8,10 +8,12 @@ use std::sync::{Arc, Mutex, atomic, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use std::fmt;
+use std::env;
 
 use bus;
 use rmp_serde;
 use tungstenite;
+use dotenv::dotenv;
 
 use exchange::exchange::Exchange;
 use exchange::types::*;
@@ -135,8 +137,9 @@ struct RunningServer {
     exchanges: HashMap<ExchangeId, JoinHandle<ExchangeHandler>>,
 
     connection_stoppers: HashMap<ConnectionId, mpsc::Sender<SystemMessage>>,
-    exchange_stoppers: HashMap<ExchangeId, mpsc::Sender<Message>>
-
+    exchange_stoppers: HashMap<ExchangeId, mpsc::Sender<Message>>,
+    
+    ws_key: String
 }
 
 impl RunningServer {
@@ -196,7 +199,7 @@ impl RunningServer {
         }
 
         PausedServer::new(
-            paused_connections, paused_exchanges
+            paused_connections, paused_exchanges, self.ws_key
             ) 
     }
 }
@@ -206,19 +209,21 @@ struct PausedServer {
     stop: Arc<atomic::AtomicBool>,
     connections: Arc<Mutex<Connections>>,
     exchanges: HashMap<ExchangeId, ExchangeHandler>,
-    accept_handle: Option<JoinHandle<()>>
+    accept_handle: Option<JoinHandle<()>>,
+    ws_key: String 
 }
 
 impl PausedServer {
-    fn new(connections: Connections, exchanges: HashMap<ExchangeId, ExchangeHandler>) -> Self {
+    fn new(connections: Connections, exchanges: HashMap<ExchangeId, ExchangeHandler>, ws_key: String) -> Self {
         let stop = Arc::new(atomic::AtomicBool::new(false));
         let connections = Arc::new(Mutex::new(connections));
 
         let stop_clone = stop.clone();
         let connections_clone = connections.clone();
-    
+        
+        let ws_key_clone = ws_key.clone();
         let accept_handle = thread::spawn(move || {
-            Self::accept_connections(connections_clone, stop_clone);
+            Self::accept_connections(connections_clone, stop_clone, ws_key_clone);
         });
 
         PausedServer {
@@ -226,10 +231,11 @@ impl PausedServer {
             connections,
             exchanges,
             accept_handle: Some(accept_handle), 
+            ws_key
         }
     }
     fn create_running_server(self) -> RunningServer {
-        let Self { exchanges, connections, .. } = self;
+        let Self { exchanges, connections, ws_key, .. } = self;
 
         let mut running_exchanges = HashMap::new();
         let mut running_connections = HashMap::new();
@@ -263,7 +269,8 @@ impl PausedServer {
         }
         RunningServer {
             exchanges: running_exchanges, connections: running_connections,
-            exchange_stoppers, connection_stoppers
+            exchange_stoppers, connection_stoppers,
+            ws_key
         }
     } 
 
@@ -330,8 +337,10 @@ impl PausedServer {
 
     fn accept_connections(
         connections: Arc<Mutex<Connections>>,
-        stop_accepting: Arc<atomic::AtomicBool>
+        stop_accepting: Arc<atomic::AtomicBool>,
+        ws_key: String
         ) {
+            use tungstenite::handshake::server::{Request, Response};
             static COUNTER: atomic::AtomicU64 = atomic::AtomicU64::new(0);
     
             let addr = "127.0.0.1:8080";
@@ -343,7 +352,35 @@ impl PausedServer {
                 match stream {
                     Ok(s) => {
                         s.set_nonblocking(false).expect("Cannot set non-blocking");
-                        let mut websocket = tungstenite::accept(s).expect("Websocket Connection Failed");
+
+                        let callback = |request: &Request, mut response: Response| {
+                            if let Some(key) = request.headers().get("ws_secret_key") {
+                                if *key == *ws_key{
+                                    Ok(response)
+                                } else {
+                                    let resp = tungstenite::http::Response::builder()
+                                        .status(401)
+                                        .body(Some("Unauthorized".into()))
+                                        .unwrap();
+                                    Err(resp)
+                                }
+                            } else {
+                                let resp = tungstenite::http::Response::builder()
+                                    .status(401)
+                                    .body(Some("Unauthorized".into()))
+                                    .unwrap();
+                                Err(resp)
+                            }
+                        };
+                        let mut websocket = match tungstenite::accept_hdr(s, callback) {
+                            Ok(ws) => ws,
+                            Err(e) => {
+                                // TODO: check if err because we rejected connection or some other
+                                // failure
+                                continue;
+                            }
+                        };
+
                         let connection_id = COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
                         let (server_tx, server_rx) = mpsc::channel();
                         let (client_tx, client_rx) = mpsc::channel();
@@ -411,7 +448,11 @@ impl PausedServer {
 }
 
 fn main() {
-    let mut paused_server = PausedServer::new(HashMap::new(), HashMap::new());    
+    dotenv().ok();
+    let secret_key = env::var("WS_SECRET_KEY")
+        .expect("WS_SECRET_KEY must be set in .env");
+
+    let mut paused_server = PausedServer::new(HashMap::new(), HashMap::new(), secret_key);    
     
     loop {
         let Some(mut running_server) = paused_server.run() else {

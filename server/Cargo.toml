@@ -9,3 +9,4 @@ protocol = { path = "../protocol" }
 tungstenite = "0.28"
 bus = "2.4"
 rmp-serde = "1.3"
+dotenv = "0.15"
