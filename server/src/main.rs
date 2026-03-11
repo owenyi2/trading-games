@@ -2,29 +2,28 @@ mod broadcaster;
 // mod server; // TODO: move all theses structs into mod server;
 
 use std::collections::HashMap;
+use std::env;
+use std::fmt;
 use std::io::{self, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, atomic, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use std::fmt;
-use std::env;
 
 use bus;
+use dotenv::dotenv;
 use rmp_serde;
 use tungstenite;
-use dotenv::dotenv;
 
 use exchange::exchange::Exchange;
 use exchange::types::*;
 
-use broadcaster::{BusBroadcaster,ExchangeId,ConnectionId};
+use broadcaster::BusBroadcaster;
 
 use protocol::{
-    ClientAction, ClientMessage, ExchangeEvent, ExchangePrivateMessage, ServerMessage,
-    SystemMessage,
+    ClientAction, ClientMessage, ConnectionId, ExchangeEvent, ExchangeId, ExchangePrivateMessage,
+    ServerMessage, SystemMessage,
 };
-
 
 #[derive(Debug)]
 struct ConnectionHandler {
@@ -34,24 +33,47 @@ struct ConnectionHandler {
 
     private_rx: Option<mpsc::Receiver<(ExchangeId, ExchangePrivateMessage)>>,
     bus_readers: HashMap<ExchangeId, bus::BusReader<ExchangeEvent>>,
-    msg_senders: HashMap<ExchangeId, mpsc::Sender<Message>> 
+    msg_senders: HashMap<ExchangeId, mpsc::Sender<Message>>,
 }
 
 impl ConnectionHandler {
-    fn new(id: ConnectionId, ws_tx: mpsc::Sender<ServerMessage>, ws_rx: mpsc::Receiver<ClientMessage>) -> Self {
-        ConnectionHandler { id, ws_tx, ws_rx, private_rx: None, bus_readers: HashMap::new(), msg_senders: HashMap::new() }
+    fn new(
+        id: ConnectionId,
+        ws_tx: mpsc::Sender<ServerMessage>,
+        ws_rx: mpsc::Receiver<ClientMessage>,
+    ) -> Self {
+        ConnectionHandler {
+            id,
+            ws_tx,
+            ws_rx,
+            private_rx: None,
+            bus_readers: HashMap::new(),
+            msg_senders: HashMap::new(),
+        }
     }
     fn run(&mut self, stop_receiver: mpsc::Receiver<SystemMessage>) {
+        let server_message = ServerMessage::System(SystemMessage::AccountId {
+            account_id: self.id,
+        });
+        let _ = self.ws_tx.send(server_message);
+        for exchange_id in self.msg_senders.keys() {
+            let server_message = ServerMessage::System(SystemMessage::ExchangeAdded {
+                exchange_id: *exchange_id,
+            });
+            let _ = self.ws_tx.send(server_message);
+        }
+        self.ws_tx.send(ServerMessage::System(SystemMessage::Start));
+
         loop {
             // 0. Check if server wants to stop us
             if let Ok(msg) = stop_receiver.try_recv() {
                 match msg {
                     SystemMessage::End => break,
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 }
             }
             // 1. Check each exchange event
-            for (exchange_id, reader) in &mut self.bus_readers{
+            for (exchange_id, reader) in &mut self.bus_readers {
                 while let Ok(event) = reader.try_recv() {
                     let server_message = ServerMessage::Event(*exchange_id, event);
                     let _ = self.ws_tx.send(server_message);
@@ -70,7 +92,7 @@ impl ConnectionHandler {
             while let Ok(msg) = self.ws_rx.try_recv() {
                 if let Some(msg_sender) = self.msg_senders.get_mut(&msg.exchange_id) {
                     let account_id = self.id; // ignore the msg.account_id TODO: remove that from
-                                              // protocol::ClientMessage
+                    // protocol::ClientMessage
                     let order = match msg.action {
                         ClientAction::CancelOrder { order_id } => Message::CancelOrder {
                             order_id,
@@ -91,9 +113,12 @@ impl ConnectionHandler {
                                 false => Side::Ask,
                             },
                         },
+                        ClientAction::End => {
+                            todo!()
+                        }
                     };
                     msg_sender.send(order);
-                }   
+                }
             }
         }
     }
@@ -107,8 +132,7 @@ struct ExchangeHandler {
 }
 impl fmt::Debug for ExchangeHandler {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ExchangeHandler")
-            .finish()
+        f.debug_struct("ExchangeHandler").finish()
     }
 }
 
@@ -117,7 +141,7 @@ enum Command {
     Stop,
     Play,
     Pause,
-    AddExchange
+    AddExchange,
 }
 
 fn parse_command(input: &str) -> Result<Command, String> {
@@ -138,14 +162,14 @@ struct RunningServer {
 
     connection_stoppers: HashMap<ConnectionId, mpsc::Sender<SystemMessage>>,
     exchange_stoppers: HashMap<ExchangeId, mpsc::Sender<Message>>,
-    
-    ws_key: String
+
+    ws_key: String,
 }
 
 impl RunningServer {
     fn run(self) -> PausedServer {
         loop {
-            print!("> "); 
+            print!("> ");
             io::stdout().flush().unwrap();
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
@@ -161,8 +185,7 @@ impl RunningServer {
                             Command::Pause => {
                                 return self.create_paused_server();
                             }
-                            _ => {
-                            }
+                            _ => {}
                         }
                     } else {
                         eprintln!("Unrecognised Command");
@@ -176,31 +199,25 @@ impl RunningServer {
         }
     }
 
-    fn create_paused_server(self) -> PausedServer { 
+    fn create_paused_server(self) -> PausedServer {
         let mut paused_connections = HashMap::new();
 
         for (_, stopper) in self.connection_stoppers {
             stopper.send(SystemMessage::End);
         }
         for (connection_id, connection) in self.connections {
-            paused_connections.insert(
-                connection_id, connection.join().unwrap()
-            );
+            paused_connections.insert(connection_id, connection.join().unwrap());
         }
-        
+
         let mut paused_exchanges = HashMap::new();
         for (_, stopper) in self.exchange_stoppers {
             stopper.send(Message::End);
         }
         for (exchange_id, exchange) in self.exchanges {
-            paused_exchanges.insert(
-                exchange_id, exchange.join().unwrap()
-            );
+            paused_exchanges.insert(exchange_id, exchange.join().unwrap());
         }
 
-        PausedServer::new(
-            paused_connections, paused_exchanges, self.ws_key
-            ) 
+        PausedServer::new(paused_connections, paused_exchanges, self.ws_key)
     }
 }
 
@@ -210,17 +227,21 @@ struct PausedServer {
     connections: Arc<Mutex<Connections>>,
     exchanges: HashMap<ExchangeId, ExchangeHandler>,
     accept_handle: Option<JoinHandle<()>>,
-    ws_key: String 
+    ws_key: String,
 }
 
 impl PausedServer {
-    fn new(connections: Connections, exchanges: HashMap<ExchangeId, ExchangeHandler>, ws_key: String) -> Self {
+    fn new(
+        connections: Connections,
+        exchanges: HashMap<ExchangeId, ExchangeHandler>,
+        ws_key: String,
+    ) -> Self {
         let stop = Arc::new(atomic::AtomicBool::new(false));
         let connections = Arc::new(Mutex::new(connections));
 
         let stop_clone = stop.clone();
         let connections_clone = connections.clone();
-        
+
         let ws_key_clone = ws_key.clone();
         let accept_handle = thread::spawn(move || {
             Self::accept_connections(connections_clone, stop_clone, ws_key_clone);
@@ -230,12 +251,17 @@ impl PausedServer {
             stop,
             connections,
             exchanges,
-            accept_handle: Some(accept_handle), 
-            ws_key
+            accept_handle: Some(accept_handle),
+            ws_key,
         }
     }
     fn create_running_server(self) -> RunningServer {
-        let Self { exchanges, connections, ws_key, .. } = self;
+        let Self {
+            exchanges,
+            connections,
+            ws_key,
+            ..
+        } = self;
 
         let mut running_exchanges = HashMap::new();
         let mut running_connections = HashMap::new();
@@ -244,39 +270,39 @@ impl PausedServer {
         let mut connection_stoppers = HashMap::new();
 
         for (exchange_id, mut exchange_handler) in exchanges {
-            exchange_stoppers.insert(
-                exchange_id, exchange_handler.msg_sender.clone()
-                );
+            exchange_stoppers.insert(exchange_id, exchange_handler.msg_sender.clone());
             running_exchanges.insert(
-                exchange_id, thread::spawn(move || {
+                exchange_id,
+                thread::spawn(move || {
                     exchange_handler.exchange.run();
                     exchange_handler
-            })
+                }),
             );
         }
         let mut connections_inner = connections.lock().unwrap();
         for (connection_id, mut connection_handler) in connections_inner.drain() {
             let (stop_tx, stop_rx) = mpsc::channel();
-            connection_stoppers.insert(
-                connection_id, stop_tx
-                );
+            connection_stoppers.insert(connection_id, stop_tx);
             running_connections.insert(
-                connection_id, thread::spawn(move || {
+                connection_id,
+                thread::spawn(move || {
                     connection_handler.run(stop_rx);
                     connection_handler
-                })
-                );
+                }),
+            );
         }
         RunningServer {
-            exchanges: running_exchanges, connections: running_connections,
-            exchange_stoppers, connection_stoppers,
-            ws_key
+            exchanges: running_exchanges,
+            connections: running_connections,
+            exchange_stoppers,
+            connection_stoppers,
+            ws_key,
         }
-    } 
+    }
 
     fn run(mut self) -> Option<RunningServer> {
         loop {
-            print!("> "); 
+            print!("> ");
             io::stdout().flush().unwrap();
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
@@ -303,8 +329,7 @@ impl PausedServer {
                                 self.sync();
                                 return Some(self.create_running_server());
                             }
-                            _ => {
-                            }
+                            _ => {}
                         }
                     } else {
                         eprintln!("Unrecognised Command");
@@ -333,37 +358,32 @@ impl PausedServer {
                 msg_sender,
             },
         );
-    } 
+    }
 
     fn accept_connections(
         connections: Arc<Mutex<Connections>>,
         stop_accepting: Arc<atomic::AtomicBool>,
-        ws_key: String
-        ) {
-            use tungstenite::handshake::server::{Request, Response};
-            static COUNTER: atomic::AtomicU64 = atomic::AtomicU64::new(0);
-    
-            let addr = "127.0.0.1:8080";
-            let listener = TcpListener::bind(addr).expect("Failed to bind");
-    
-            listener.set_nonblocking(true).expect("Cannot set non-blocking");
-    
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(s) => {
-                        s.set_nonblocking(false).expect("Cannot set non-blocking");
+        ws_key: String,
+    ) {
+        use tungstenite::handshake::server::{Request, Response};
+        static COUNTER: atomic::AtomicU64 = atomic::AtomicU64::new(0);
 
-                        let callback = |request: &Request, mut response: Response| {
-                            if let Some(key) = request.headers().get("ws_secret_key") {
-                                if *key == *ws_key{
-                                    Ok(response)
-                                } else {
-                                    let resp = tungstenite::http::Response::builder()
-                                        .status(401)
-                                        .body(Some("Unauthorized".into()))
-                                        .unwrap();
-                                    Err(resp)
-                                }
+        let addr = "127.0.0.1:8080";
+        let listener = TcpListener::bind(addr).expect("Failed to bind");
+
+        listener
+            .set_nonblocking(true)
+            .expect("Cannot set non-blocking");
+
+        for stream in listener.incoming() {
+            match stream {
+                Ok(s) => {
+                    s.set_nonblocking(false).expect("Cannot set non-blocking");
+
+                    let callback = |request: &Request, mut response: Response| {
+                        if let Some(key) = request.headers().get("ws_secret_key") {
+                            if *key == *ws_key {
+                                Ok(response)
                             } else {
                                 let resp = tungstenite::http::Response::builder()
                                     .status(401)
@@ -371,57 +391,64 @@ impl PausedServer {
                                     .unwrap();
                                 Err(resp)
                             }
-                        };
-                        let mut websocket = match tungstenite::accept_hdr(s, callback) {
-                            Ok(ws) => ws,
-                            Err(e) => {
-                                // TODO: check if err because we rejected connection or some other
-                                // failure
-                                continue;
-                            }
-                        };
+                        } else {
+                            let resp = tungstenite::http::Response::builder()
+                                .status(401)
+                                .body(Some("Unauthorized".into()))
+                                .unwrap();
+                            Err(resp)
+                        }
+                    };
+                    let mut websocket = match tungstenite::accept_hdr(s, callback) {
+                        Ok(ws) => ws,
+                        Err(e) => {
+                            // TODO: check if err because we rejected connection or some other
+                            // failure
+                            continue;
+                        }
+                    };
 
-                        let connection_id = COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
-                        let (server_tx, server_rx) = mpsc::channel();
-                        let (client_tx, client_rx) = mpsc::channel();
-    
-                        let ws_thread = thread::spawn(move || {
-                            websocket.get_mut().set_nonblocking(true).expect("Cannot set non-blocking");
-                            loop {
-                                if let Ok(msg) = server_rx.try_recv() {
-                                    if matches!(msg, ServerMessage::System(SystemMessage::End)) {
-                                        break;
-                                    }
-                                    let encoded: Vec<u8> = rmp_serde::to_vec(&msg).unwrap();
-                                    let _ = websocket.send(tungstenite::Message::Binary(encoded.into()));
+                    let connection_id = COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
+                    let (server_tx, server_rx) = mpsc::channel();
+                    let (client_tx, client_rx) = mpsc::channel();
+
+                    let ws_thread = thread::spawn(move || {
+                        websocket
+                            .get_mut()
+                            .set_nonblocking(true)
+                            .expect("Cannot set non-blocking");
+                        loop {
+                            if let Ok(msg) = server_rx.try_recv() {
+                                if matches!(msg, ServerMessage::System(SystemMessage::End)) {
+                                    break;
                                 }
-                                if let Ok(msg) = websocket.read() {
-                                    if msg.is_binary() {
-                                        if let Ok(parsed) = rmp_serde::from_slice::<ClientMessage>(&msg.into_data()) {
-                                            let _ = client_tx.send(parsed);
-    
-                                        }
-                                    }
-                                }
-    
+                                let encoded: Vec<u8> = rmp_serde::to_vec(&msg).unwrap();
+                                let _ =
+                                    websocket.send(tungstenite::Message::Binary(encoded.into()));
                             }
-                        });
-                        connections.lock().unwrap().insert(connection_id, ConnectionHandler::new( 
-                            connection_id,
-                            server_tx,
-                            client_rx,
-                        ));
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-    
-                    }
-                    Err(e) => panic!("Encountered IO error: {e}"),
-                
+                            if let Ok(msg) = websocket.read() {
+                                if msg.is_binary() {
+                                    if let Ok(parsed) =
+                                        rmp_serde::from_slice::<ClientMessage>(&msg.into_data())
+                                    {
+                                        let _ = client_tx.send(parsed);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    connections.lock().unwrap().insert(
+                        connection_id,
+                        ConnectionHandler::new(connection_id, server_tx, client_rx),
+                    );
                 }
-                if stop_accepting.load(atomic::Ordering::Relaxed) {
-                    break;
-                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                Err(e) => panic!("Encountered IO error: {e}"),
             }
+            if stop_accepting.load(atomic::Ordering::Relaxed) {
+                break;
+            }
+        }
     }
     fn sync(&mut self) {
         let mut connections_lock = self.connections.lock().unwrap();
@@ -429,17 +456,20 @@ impl PausedServer {
             let (private_tx, private_rx) = mpsc::channel();
             for (exchange_id, exchange) in self.exchanges.iter_mut() {
                 // Each Connection needs to subscribe a bus reader to each Exchange
-                connection.bus_readers.insert(
-                    *exchange_id, exchange.exchange.broadcaster.tx.add_rx()
-                    );
+                connection
+                    .bus_readers
+                    .insert(*exchange_id, exchange.exchange.broadcaster.tx.add_rx());
                 // Each Connection needs to clone a msg_sender to each Exchange
-                connection.msg_senders.insert(
-                    *exchange_id, exchange.msg_sender.clone()
-                    );
+                connection
+                    .msg_senders
+                    .insert(*exchange_id, exchange.msg_sender.clone());
                 // Each Exchange.broadcaster needs to populate its private_txs
 
-                exchange.exchange.broadcaster.private_txs.insert(
-                    *connection_id, private_tx.clone());
+                exchange
+                    .exchange
+                    .broadcaster
+                    .private_txs
+                    .insert(*connection_id, private_tx.clone());
             }
             // Each connection needs to have private_rx
             connection.private_rx = Some(private_rx);
@@ -449,11 +479,10 @@ impl PausedServer {
 
 fn main() {
     dotenv().ok();
-    let secret_key = env::var("WS_SECRET_KEY")
-        .expect("WS_SECRET_KEY must be set in .env");
+    let secret_key = env::var("WS_SECRET_KEY").expect("WS_SECRET_KEY must be set in .env");
 
-    let mut paused_server = PausedServer::new(HashMap::new(), HashMap::new(), secret_key);    
-    
+    let mut paused_server = PausedServer::new(HashMap::new(), HashMap::new(), secret_key);
+
     loop {
         let Some(mut running_server) = paused_server.run() else {
             // state machine cycles between Paused Server or Running Server

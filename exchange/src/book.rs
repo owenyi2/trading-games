@@ -189,6 +189,9 @@ impl OrderBook {
         }
         self.order_info.insert(order.order_id, order);
     }
+    pub fn order_info(&self) -> &HashMap<OrderId, Order> {
+        &self.order_info
+    }
     pub fn summarise(&self) -> (Vec<(u64, u64)>, Vec<(u64, u64)>) {
         // Bids (price, volume), Asks (price, volume)
         (

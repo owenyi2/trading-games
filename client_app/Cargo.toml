@@ -1,0 +1,24 @@
+[package]
+name = "client_app"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "egui_client"
+path = "src/main.rs"
+
+[dependencies]
+client_lib = { path = "../client_lib" }
+exchange = { path = "../exchange" }
+protocol = { path = "../protocol" }
+eframe = "0.33"
+tungstenite = { version = "0.28.0", features = ["native-tls"] }
+native-tls = "0.2"
+rmp-serde = "1.3"
+
+# [target.'cfg(target_arch = "wasm32")'.dependencies]
+# wasm-bindgen-futures = "0.4.50"
+# web-sys = "0.3.70"              # to access the DOM (to hide the loading text)

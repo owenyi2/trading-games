@@ -7,10 +7,7 @@ use exchange::book::Order;
 use exchange::exchange::Broadcaster;
 use exchange::types::*;
 
-use protocol::{ExchangeEvent, ExchangePrivateMessage};
-
-pub type ExchangeId = u64;
-pub type ConnectionId = u64;
+use protocol::{ConnectionId, ExchangeEvent, ExchangeId, ExchangePrivateMessage};
 
 pub struct BusBroadcaster {
     pub tx: bus::Bus<ExchangeEvent>,
@@ -51,10 +48,13 @@ impl Broadcaster for BusBroadcaster {
                 .get(&order.account_id()) // TODO: actually we need to map
                 // AccountId->ConnectionId->Sender
                 .expect("Orders must come from registered accounts")
-                .send((self.exchange_id, ExchangePrivateMessage::InsertConfirm {
-                    client_order_id: *client_order_id,
-                    order_id: order.order_id(),
-                }));
+                .send((
+                    self.exchange_id,
+                    ExchangePrivateMessage::InsertConfirm {
+                        client_order_id: *client_order_id,
+                        order_id: order.order_id(),
+                    },
+                ));
         }
     }
     fn broadcast_cancel(&mut self, order: &Order, message: &Message) {
@@ -64,6 +64,19 @@ impl Broadcaster for BusBroadcaster {
             order_id: order.order_id(),
             id,
         });
+        if let Message::CancelOrder { order_id, .. } = message {
+            let _ = self
+                .private_txs
+                .get(&order.account_id()) // TODO: actually we need to map
+                // AccountId->ConnectionId->Sender
+                .expect("Orders must come from registered accounts")
+                .send((
+                    self.exchange_id,
+                    ExchangePrivateMessage::CancelConfirm {
+                        order_id: order.order_id(),
+                    },
+                ));
+        }
     }
     fn broadcast_trade(
         &mut self,

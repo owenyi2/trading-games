@@ -17,6 +17,21 @@ pub trait Broadcaster {
     );
 }
 
+pub struct NoBroadcaster;
+
+impl Broadcaster for NoBroadcaster {
+    fn broadcast_insert(&mut self, order: &Order, message: &Message) {}
+    fn broadcast_cancel(&mut self, order: &Order, message: &Message) {}
+    fn broadcast_trade(
+        &mut self,
+        ask_order: &Order,
+        bid_order: &Order,
+        trade_price: Price,
+        trade_volume: Quantity,
+    ) {
+    }
+}
+
 pub struct Exchange<Broadcaster> {
     order_book: OrderBook,
     pub broadcaster: Broadcaster,

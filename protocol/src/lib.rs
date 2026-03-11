@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use exchange::types::*;
 
+pub type ExchangeId = u64;
+pub type ConnectionId = u64;
+
 type ExchangeEventId = u64;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -15,12 +18,12 @@ pub enum ClientAction {
         qty: u64,
         client_order_id: u64,
     },
+    End,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClientMessage {
     pub exchange_id: u64,
-    pub account_id: u64,
     pub action: ClientAction,
 }
 
@@ -33,6 +36,7 @@ pub enum ServerMessage {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum SystemMessage {
+    Start,
     ExchangeAdded { exchange_id: u64 },
     AccountId { account_id: u64 },
     End,
@@ -63,6 +67,9 @@ pub enum ExchangeEvent {
 pub enum ExchangePrivateMessage {
     InsertConfirm {
         client_order_id: u64,
+        order_id: OrderId,
+    },
+    CancelConfirm {
         order_id: OrderId,
     },
 }

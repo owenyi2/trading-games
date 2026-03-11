@@ -13,6 +13,18 @@ WS_SECRET_KEY = os.getenv("WS_SECRET_KEY")
 client_id = 69
 order_id_counter = itertools.count(1)  # auto-increment order IDs
 
+"""
+Insert an order by typing something like
+
+`bid 100 10`
+
+to mean "Bid" with price 100 for 10 lots
+
+Specify an Exchange by typing something like
+
+`0 bid 100 10` to mean "Bid" with price 100 for 10 lots on exchange 0
+"""
+
 async def receiver(ws):
     """Receive messages from websocket and print them."""
     try:
@@ -52,6 +64,31 @@ async def sender(ws):
                             "side": side,
                             "price": int(parts[1]),
                             "qty": int(parts[2]),
+                            "client_order_id": order_id
+                            }
+                        }
+                    }
+                pack = msgpack.packb(message) 
+                await ws.send(pack)
+            except:
+                continue
+        if len(parts) == 4:
+            try:
+                order_id = next(order_id_counter)
+                if parts[1].lower() == "bid":
+                    side = True
+                elif parts[1].lower() == "ask":
+                    side = False
+                else: 
+                    raise ValueError
+                message = {
+                    "exchange_id": int(parts[0]),
+                    "account_id": client_id,
+                    "action": {
+                        "InsertOrder": {
+                            "side": side,
+                            "price": int(parts[2]),
+                            "qty": int(parts[3]),
                             "client_order_id": order_id
                             }
                         }
