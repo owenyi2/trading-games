@@ -1,4 +1,4 @@
-use exchange::book::{Order, OrderBook};
+use exchange::book::OrderBook;
 use exchange::types::*;
 use protocol::{
     ClientAction, ClientMessage, ConnectionId, ExchangeEvent, ExchangeId, ExchangePrivateMessage,
@@ -172,6 +172,8 @@ impl Client {
 pub struct ClientOrderBook {
     pub order_book: OrderBook,
     pub our_orders: HashSet<OrderId>,
+    pub cash: i64,
+    pub position: i64,
 }
 
 impl ClientOrderBook {
@@ -179,6 +181,8 @@ impl ClientOrderBook {
         ClientOrderBook {
             order_book: OrderBook::default(),
             our_orders: HashSet::new(),
+            cash: 0,
+            position: 0,
         }
     }
     fn handle_exchange_event(&mut self, event: ExchangeEvent) {
@@ -228,6 +232,31 @@ impl ClientOrderBook {
             }
             ExchangePrivateMessage::CancelConfirm { order_id, .. } => {
                 self.our_orders.remove(&order_id);
+            }
+            ExchangePrivateMessage::TradeConfirm {
+                order_id,
+                trade_price,
+                trade_volume,
+                side,
+                ..
+            } => {
+                self.our_orders.remove(&order_id);
+                let side = match side {
+                    1 => Side::Bid,
+                    -1 => Side::Ask,
+                    _ => panic!("side must be either 1 or -1"),
+                };
+
+                match side {
+                    Side::Bid => {
+                        self.cash -= (trade_price * trade_volume) as i64;
+                        self.position += trade_volume as i64;
+                    }
+                    Side::Ask => {
+                        self.cash += (trade_price * trade_volume) as i64;
+                        self.position -= trade_volume as i64;
+                    }
+                }
             }
         }
     }

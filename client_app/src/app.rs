@@ -11,7 +11,7 @@ use tungstenite;
 use tungstenite::stream::MaybeTlsStream;
 
 use client_lib::Client;
-use exchange::book::{Order, OrderBook};
+use exchange::book::OrderBook;
 use exchange::types::*;
 
 use protocol::{
@@ -55,7 +55,7 @@ struct MainMenu {
 impl MainMenu {
     fn new() -> Self {
         Self {
-            addr_str: String::from(""),
+            addr_str: String::from("ws://127.0.0.1:8080"),
             // port_str: String::from(""),
             game_key_str: String::new(),
             valid_addr_port_key: false,
@@ -227,6 +227,27 @@ impl Running {
             user_command.clear();
         }
     }
+    fn draw_position(
+        &mut self,
+        best_bid: Option<u64>,
+        best_ask: Option<u64>,
+        cash: i64,
+        position: i64,
+        ui: &mut egui::Ui,
+    ) {
+        let net = match (best_bid, best_ask) {
+            (Some(bid), Some(ask)) => {
+                let midprice = (bid + ask) as f32 / 2.0;
+                (cash as f32 + position as f32 * midprice).to_string()
+            }
+            _ => "N/A".to_string(),
+        };
+
+        ui.label(format!(
+            "Cash: {} | Position: {} | Mark to Market: {}",
+            cash, position, net
+        ));
+    }
 
     fn parse_command(input: &str) -> Option<InternalAction> {
         let parts: Vec<&str> = input.trim().split_whitespace().collect();
@@ -268,17 +289,22 @@ impl Running {
             .into_iter()
             .map(|(exchange_id, book)| {
                 let (bids, asks) = book.order_book.summarise();
-                (*exchange_id, bids, asks)
+                let (cash, position) = (book.cash, book.position);
+                (*exchange_id, bids, asks, cash, position)
             })
             .collect();
         books.sort_by(|a, b| a.0.cmp(&b.0));
 
         ui.horizontal(|ui| {
-            for (exchange_id, bids, asks) in books {
+            for (exchange_id, bids, asks, cash, position) in books {
                 ui.group(|ui| {
                     ui.vertical(|ui| {
-                        ui.label(format!("Exchange {}", exchange_id)); // <- ABOVE the grid
+                        ui.label(format!("Exchange {}", exchange_id));
+                        let best_bid = bids.first().cloned().map(|x| x.0);
+                        let best_ask = asks.first().cloned().map(|x| x.0);
+
                         Self::draw_orderbook(ui, format!("orderbook_{}", exchange_id), bids, asks);
+                        self.draw_position(best_bid, best_ask, cash, position, ui);
                         self.draw_command_input(exchange_id, ui);
                     })
                 });

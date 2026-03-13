@@ -3,7 +3,6 @@ use std::sync::{atomic, mpsc};
 
 use bus;
 
-use exchange::book::Order;
 use exchange::exchange::Broadcaster;
 use exchange::types::*;
 
@@ -39,22 +38,25 @@ impl Broadcaster for BusBroadcaster {
             id,
         });
 
-        if let Message::InsertOrder {
-            client_order_id, ..
-        } = message
-        {
-            let _ = self
-                .private_txs
-                .get(&order.account_id()) // TODO: actually we need to map
-                // AccountId->ConnectionId->Sender
-                .expect("Orders must come from registered accounts")
-                .send((
-                    self.exchange_id,
-                    ExchangePrivateMessage::InsertConfirm {
-                        client_order_id: *client_order_id,
-                        order_id: order.order_id(),
-                    },
-                ));
+        match message {
+            Message::InsertOrder {
+                client_order_id, ..
+            } => {
+                let _ = self
+                    .private_txs
+                    .get(&order.account_id()) // TODO: actually we need to map
+                    // AccountId->ConnectionId->Sender
+                    .expect("Orders must come from registered accounts")
+                    .send((
+                        self.exchange_id,
+                        ExchangePrivateMessage::InsertConfirm {
+                            client_order_id: *client_order_id,
+                            order_id: order.order_id(),
+                            id,
+                        },
+                    ));
+            }
+            _ => unreachable!(),
         }
     }
     fn broadcast_cancel(&mut self, order: &Order, message: &Message) {
@@ -64,18 +66,23 @@ impl Broadcaster for BusBroadcaster {
             order_id: order.order_id(),
             id,
         });
-        if let Message::CancelOrder { order_id, .. } = message {
-            let _ = self
-                .private_txs
-                .get(&order.account_id()) // TODO: actually we need to map
-                // AccountId->ConnectionId->Sender
-                .expect("Orders must come from registered accounts")
-                .send((
-                    self.exchange_id,
-                    ExchangePrivateMessage::CancelConfirm {
-                        order_id: order.order_id(),
-                    },
-                ));
+
+        match message {
+            Message::CancelOrder { order_id, .. } => {
+                let _ = self
+                    .private_txs
+                    .get(&order.account_id()) // TODO: actually we need to map
+                    // AccountId->ConnectionId->Sender
+                    .expect("Orders must come from registered accounts")
+                    .send((
+                        self.exchange_id,
+                        ExchangePrivateMessage::CancelConfirm {
+                            order_id: order.order_id(),
+                            id,
+                        },
+                    ));
+            }
+            _ => unreachable!(),
         }
     }
     fn broadcast_trade(
@@ -94,5 +101,22 @@ impl Broadcaster for BusBroadcaster {
             trade_volume,
             id,
         });
+
+        for (side, order) in [(Side::Ask, ask_order), (Side::Bid, bid_order)] {
+            let _ = self
+                .private_txs
+                .get(&order.account_id())
+                .expect("Orders must come from registered accounts")
+                .send((
+                    self.exchange_id,
+                    ExchangePrivateMessage::TradeConfirm {
+                        order_id: order.order_id(),
+                        trade_price,
+                        trade_volume,
+                        side: side as i8,
+                        id,
+                    },
+                ));
+        }
     }
 }

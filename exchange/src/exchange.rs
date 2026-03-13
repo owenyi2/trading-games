@@ -1,9 +1,8 @@
 use std::cmp;
 use std::sync::mpsc;
 
-use crate::book::Order;
 use crate::book::OrderBook;
-use crate::types::{AccountId, Message, OrderId, Price, Quantity, Side};
+use crate::types::{AccountId, Message, Order, OrderId, Price, Quantity, Side};
 
 pub trait Broadcaster {
     fn broadcast_insert(&mut self, order: &Order, message: &Message);

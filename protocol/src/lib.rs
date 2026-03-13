@@ -68,8 +68,17 @@ pub enum ExchangePrivateMessage {
     InsertConfirm {
         client_order_id: u64,
         order_id: OrderId,
+        id: ExchangeEventId,
     },
     CancelConfirm {
         order_id: OrderId,
+        id: ExchangeEventId,
+    },
+    TradeConfirm {
+        order_id: OrderId,
+        trade_price: Price,
+        trade_volume: Quantity,
+        side: i8,
+        id: ExchangeEventId,
     },
 }
