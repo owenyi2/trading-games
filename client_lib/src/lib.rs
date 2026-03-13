@@ -1,8 +1,8 @@
 use exchange::book::OrderBook;
 use exchange::types::*;
 use protocol::{
-    ClientAction, ClientMessage, ConnectionId, ExchangeEvent, ExchangeId, ExchangePrivateMessage,
-    ServerMessage, SystemMessage,
+    ClientAction, ClientMessage, ExchangeEvent, ExchangeId, ExchangePrivateMessage, ServerMessage,
+    SystemMessage,
 };
 
 use std::collections::{HashMap, HashSet};
@@ -91,9 +91,11 @@ impl Client {
         for order_id in &book.our_orders {
             let order = self
                 .books
-                .get(&exchange_id).expect("unknown `exchange_id`")
+                .get(&exchange_id)
+                .expect("unknown `exchange_id`")
                 .order_book
-                .get_order(*order_id).expect("uh oh we've hallucinated an order fuck");
+                .get_order(*order_id)
+                .expect("uh oh we've hallucinated an order fuck");
 
             let action = ClientAction::CancelOrder {
                 order_id: *order_id,

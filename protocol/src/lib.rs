@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use exchange::types::*;
 
 pub type ExchangeId = u64;
-pub type ConnectionId = u64;
 
 type ExchangeEventId = u64;
 

@@ -6,7 +6,7 @@ use bus;
 use exchange::exchange::Broadcaster;
 use exchange::types::*;
 
-use protocol::{ConnectionId, ExchangeEvent, ExchangeId, ExchangePrivateMessage};
+use protocol::{ExchangeEvent, ExchangeId, ExchangePrivateMessage};
 
 pub struct BusBroadcaster {
     pub tx: bus::Bus<ExchangeEvent>,
