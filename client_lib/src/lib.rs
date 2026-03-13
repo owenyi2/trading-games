@@ -87,7 +87,24 @@ impl Client {
         Some(())
     }
     pub fn cancel_level(&self, exchange_id: ExchangeId, price: Price) -> Option<()> {
-        todo!()
+        let book = self.books.get(&exchange_id)?;
+        for order_id in &book.our_orders {
+            let order = self
+                .books
+                .get(&exchange_id).expect("unknown `exchange_id`")
+                .order_book
+                .get_order(*order_id).expect("uh oh we've hallucinated an order fuck");
+
+            let action = ClientAction::CancelOrder {
+                order_id: *order_id,
+            };
+            let message = ClientMessage {
+                exchange_id,
+                action,
+            };
+            self.ws_tx.send(message);
+        }
+        Some(())
     }
     pub fn cancel_order(&self, exchange_id: ExchangeId, order_id: OrderId) -> Option<&Order> {
         let order = self
