@@ -3,10 +3,6 @@ name = "client_lib"
 version = "0.1.0"
 edition = "2024"
 
-[[bin]]
-name = "bot" # TODO: move this to folder like bots
-path = "src/bot.rs"
-
 [dependencies]
 exchange = { path = "../exchange" }
 protocol = { path = "../protocol" }

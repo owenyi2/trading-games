@@ -105,31 +105,6 @@ impl MainMenu {
         ui.heading("Server IP Addres:");
         ui.text_edit_singleline(&mut self.addr_str);
         let addr = self.addr_str.trim();
-        // if !addr.is_empty() {
-        //     match addr.parse::<std::net::IpAddr>() {
-        //         Ok(_) => {}
-        //         Err(_) => {
-        //             ui.colored_label(egui::Color32::RED, "Invalid IP address!");
-        //             self.valid_addr_port_key = false;
-        //         }
-        //     }
-        // } else {
-        //     self.valid_addr_port_key = false;
-        // }
-        // ui.heading("Port:");
-        // let port = self.port_str.trim();
-        // if !port.is_empty() {
-        //     match port.parse::<u16>() {
-        //         Ok(_) => {}
-        //         Err(_) => {
-        //             ui.colored_label(egui::Color32::RED, "Port must be a number 1-65535!");
-        //             self.valid_addr_port_key = false;
-        //         }
-        //     }
-        // } else {
-        //     self.valid_addr_port_key = false;
-        // }
-        // ui.text_edit_singleline(&mut self.port_str);
         ui.heading("Game Key:");
         ui.text_edit_singleline(&mut self.game_key_str);
 
@@ -310,6 +285,9 @@ impl Running {
                 });
             }
         });
+
+        // let debug = egui::Label::new(format!("{:?}", self.client).to_string()).wrap();
+        // ui.add(debug);
 
         App::Running(self)
     }

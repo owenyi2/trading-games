@@ -1,0 +1,20 @@
+[package]
+name = "bots"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "market_maker"
+path = "src/market_maker.rs"
+
+[[bin]]
+name = "market_taker"
+path = "src/market_taker.rs"
+
+[dependencies]
+client_lib = { path = "../client_lib" }
+exchange = { path = "../exchange" }
+protocol = { path = "../protocol" }
+tungstenite = { version = "0.28.0", features = ["native-tls"] }
+rand = "0.10"
+rand_distr = "0.6"

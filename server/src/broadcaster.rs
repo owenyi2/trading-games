@@ -36,6 +36,7 @@ impl Broadcaster for BusBroadcaster {
             qty: order.qty(),
             side: order.side() as i8,
             id,
+            order_id: order.order_id(),
         });
 
         match message {

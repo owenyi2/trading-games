@@ -7,6 +7,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use client_lib::Client;
 use exchange::types::*;
 
+use rand::Rng;
+use rand::RngExt;
+use rand_distr::{Distribution, Exp};
 use tungstenite;
 use tungstenite::stream::MaybeTlsStream;
 
@@ -14,56 +17,57 @@ struct MarketMaker {
     client: Client,
     theo: u64,
     last_change: Instant,
+    lambda: f32,
 }
 
 impl MarketMaker {
-    fn new(client: Client) -> Self {
+    fn new(client: Client, lambda: f32) -> Self {
         Self {
             client,
             theo: 100,
             last_change: Instant::now(),
+            lambda,
         }
     }
     fn act(&mut self) {
-        let now = Instant::now();
         let EXCHANGE_ID = 0;
 
-        if now.duration_since(self.last_change) >= Duration::from_secs(1) {
-            self.last_change = now;
+        let mut rng = rand::rng();
+        let coin_flip: bool = rng.random_bool(0.5);
 
-            // simple coin flip without rand
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos();
-
-            if (nanos >> 10) % 2 == 0 {
-                self.theo += 1;
-            } else {
-                self.theo -= 1;
-            }
-
-            self.client.cancel_all(EXCHANGE_ID);
-
-            let qty = 10;
-            let bid_price = self.theo - 1;
-            let ask_price = self.theo + 1;
-
-            self.client
-                .limit_order(EXCHANGE_ID, Side::Bid, bid_price, qty);
-            self.client
-                .limit_order(EXCHANGE_ID, Side::Ask, ask_price, qty);
+        if coin_flip {
+            self.theo += 1;
+        } else {
+            self.theo -= 1;
         }
+
+        self.client.cancel_all(EXCHANGE_ID);
+        let qty = 1000;
+        let bid_price = self.theo - 1;
+        let ask_price = self.theo + 1;
+
+        self.client
+            .limit_order(EXCHANGE_ID, Side::Bid, bid_price, qty);
+        self.client
+            .limit_order(EXCHANGE_ID, Side::Ask, ask_price, qty);
     }
     fn run(&mut self) {
+        let exp = Exp::new(self.lambda).unwrap();
+        let mut rng = rand::rng();
+
+        let mut next_time = Instant::now() + Duration::from_secs_f32(exp.sample(&mut rng));
+
         loop {
             self.client.update();
 
             if self.client.start() {
-                self.act();
+                if Instant::now() >= next_time {
+                    self.act();
+                    next_time = Instant::now() + Duration::from_secs_f32(exp.sample(&mut rng));
+                }
             }
 
-            let pause = time::Duration::from_millis(1000);
+            let pause = Duration::from_millis(10);
             thread::sleep(pause);
         }
     }
@@ -81,6 +85,6 @@ fn main() {
 
     let client = Client::connect(ws);
 
-    let mut bot = MarketMaker::new(client);
+    let mut bot = MarketMaker::new(client, 1.0);
     bot.run();
 }

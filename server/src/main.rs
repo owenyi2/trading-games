@@ -1,5 +1,5 @@
 mod broadcaster;
-mod server; 
+mod server;
 
 use std::collections::HashMap;
 use std::env;

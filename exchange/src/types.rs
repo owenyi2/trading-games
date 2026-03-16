@@ -81,4 +81,19 @@ impl Order {
             side,
         }
     }
+    pub fn new_order_with_order_id(
+        account_id: AccountId,
+        price: Price,
+        qty: Quantity,
+        side: Side,
+        order_id: OrderId,
+    ) -> Self {
+        Order {
+            account_id,
+            price,
+            qty,
+            order_id: order_id,
+            side,
+        }
+    }
 }

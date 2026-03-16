@@ -51,6 +51,7 @@ pub enum ExchangeEvent {
         price: Price,
         qty: Quantity,
         side: i8,
+        order_id: OrderId,
         id: ExchangeEventId,
     },
     Trade {

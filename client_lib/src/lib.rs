@@ -13,6 +13,7 @@ use std::thread::{self, JoinHandle};
 use tungstenite;
 use tungstenite::stream::MaybeTlsStream;
 
+#[derive(Debug)]
 pub struct Client {
     ws_tx: mpsc::Sender<ClientMessage>,
     ws_rx: mpsc::Receiver<ServerMessage>,
@@ -188,6 +189,7 @@ impl Client {
     }
 }
 
+#[derive(Debug)]
 pub struct ClientOrderBook {
     pub order_book: OrderBook,
     pub our_orders: HashSet<OrderId>,
@@ -221,14 +223,18 @@ impl ClientOrderBook {
                 ),
             },
             ExchangeEvent::Insert {
-                price, qty, side, ..
+                price,
+                qty,
+                side,
+                order_id,
+                ..
             } => {
                 let side = match side {
                     1 => Side::Bid,
                     -1 => Side::Ask,
                     _ => panic!("side must be either 1 or -1"),
                 };
-                let order = Order::new_order(0, price, qty, side);
+                let order = Order::new_order_with_order_id(0, price, qty, side, order_id);
                 self.order_book.insert_order(order);
                 // TODO: it is possible that the orderbook is in cross before we receive the trade
                 // message. Especially if there is lag spike. This could be problematic.
@@ -259,7 +265,15 @@ impl ClientOrderBook {
                 side,
                 ..
             } => {
-                self.our_orders.remove(&order_id);
+                match self.order_book.get_order(order_id) {
+                    Some(order) => {
+                        // Janky solution. Remove order_id from self.our_orders: HashSet,
+                        // if we can't find it in self.order_book: OrderBook
+                    }
+                    None => {
+                        self.our_orders.remove(&order_id);
+                    }
+                }
                 let side = match side {
                     1 => Side::Bid,
                     -1 => Side::Ask,
