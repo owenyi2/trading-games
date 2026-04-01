@@ -22,6 +22,8 @@ pub struct Client {
     client_order_id_counter: u64,
     start: bool,
 
+    msg_history: Vec<ServerMessage>,
+
     ws_thread: JoinHandle<tungstenite::WebSocket<MaybeTlsStream<TcpStream>>>,
 }
 
@@ -67,6 +69,7 @@ impl Client {
             client_order_id_counter: 0,
             account_id: None,
             start: false,
+            msg_history: Vec::new(),
             ws_thread,
         }
     }
@@ -156,23 +159,23 @@ impl Client {
     pub fn update(&mut self) {
         while let Ok(server_msg) = self.ws_rx.try_recv() {
             match server_msg {
-                ServerMessage::Event(id, event) => {
+                ServerMessage::Event(id, ref event) => {
                     let book = self.books.get_mut(&id).unwrap();
                     book.handle_exchange_event(event);
                 }
-                ServerMessage::Private(id, private_msg) => {
+                ServerMessage::Private(id, ref private_msg) => {
                     let book = self.books.get_mut(&id).unwrap();
                     book.handle_exchange_private_message(private_msg);
                 }
-                ServerMessage::System(msg) => match msg {
+                ServerMessage::System(ref msg) => match msg {
                     SystemMessage::Start => {
                         self.start = true;
                     }
                     SystemMessage::ExchangeAdded { exchange_id } => {
-                        self.books.insert(exchange_id, ClientOrderBook::new());
+                        self.books.insert(*exchange_id, ClientOrderBook::new());
                     }
                     SystemMessage::AccountId { account_id } => {
-                        self.account_id = Some(account_id);
+                        self.account_id = Some(*account_id);
                     }
                     SystemMessage::End => {
                         self.start = false;
@@ -180,7 +183,11 @@ impl Client {
                     }
                 },
             }
+            self.msg_history.push(server_msg);
         }
+    }
+    pub fn msg_history(&self) -> &[ServerMessage] {
+        &self.msg_history
     }
     pub fn books(&self) -> &HashMap<ExchangeId, ClientOrderBook> {
         &self.books
@@ -207,12 +214,12 @@ impl ClientOrderBook {
             position: 0,
         }
     }
-    fn handle_exchange_event(&mut self, event: ExchangeEvent) {
+    fn handle_exchange_event(&mut self, event: &ExchangeEvent) {
         match event {
-            ExchangeEvent::Cancel { order_id, .. } => match self.order_book.get_order(order_id) {
+            ExchangeEvent::Cancel { order_id, .. } => match self.order_book.get_order(*order_id) {
                 Some(order) => {
                     self.order_book.remove_order(
-                        order_id,
+                        *order_id,
                         order.price(),
                         order.side(),
                         order.qty(),
@@ -235,7 +242,7 @@ impl ClientOrderBook {
                     -1 => Side::Ask,
                     _ => panic!("side must be either 1 or -1"),
                 };
-                let order = Order::new_order_with_order_id(0, price, qty, side, order_id);
+                let order = Order::new_order_with_order_id(0, *price, *qty, side, *order_id);
                 self.order_book.insert_order(order);
                 // TODO: it is possible that the orderbook is in cross before we receive the trade
                 // message. Especially if there is lag spike. This could be problematic.
@@ -246,18 +253,18 @@ impl ClientOrderBook {
                 trade_volume,
                 ..
             } => {
-                self.order_book.match_order(bid_id, ask_id, trade_volume);
+                self.order_book.match_order(*bid_id, *ask_id, *trade_volume);
             }
         }
     }
 
-    fn handle_exchange_private_message(&mut self, message: ExchangePrivateMessage) {
+    fn handle_exchange_private_message(&mut self, message: &ExchangePrivateMessage) {
         match message {
             ExchangePrivateMessage::InsertConfirm { order_id, .. } => {
-                self.our_orders.insert(order_id);
+                self.our_orders.insert(*order_id);
             }
             ExchangePrivateMessage::CancelConfirm { order_id, .. } => {
-                self.our_orders.remove(&order_id);
+                self.our_orders.remove(order_id);
             }
             ExchangePrivateMessage::TradeConfirm {
                 order_id,
@@ -266,13 +273,13 @@ impl ClientOrderBook {
                 side,
                 ..
             } => {
-                match self.order_book.get_order(order_id) {
+                match self.order_book.get_order(*order_id) {
                     Some(order) => {
                         // Janky solution. Remove order_id from self.our_orders: HashSet,
                         // if we can't find it in self.order_book: OrderBook
                     }
                     None => {
-                        self.our_orders.remove(&order_id);
+                        self.our_orders.remove(order_id);
                     }
                 }
                 let side = match side {
@@ -284,11 +291,11 @@ impl ClientOrderBook {
                 match side {
                     Side::Bid => {
                         self.cash -= (trade_price * trade_volume) as i64;
-                        self.position += trade_volume as i64;
+                        self.position += *trade_volume as i64;
                     }
                     Side::Ask => {
                         self.cash += (trade_price * trade_volume) as i64;
-                        self.position -= trade_volume as i64;
+                        self.position -= *trade_volume as i64;
                     }
                 }
             }

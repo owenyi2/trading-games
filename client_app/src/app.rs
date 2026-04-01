@@ -202,6 +202,34 @@ impl Running {
             user_command.clear();
         }
     }
+    fn draw_messages(&mut self, ui: &mut egui::Ui) {
+        let height = 200.0;
+        ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.set_min_height(height);
+                ui.label("Message History");
+                let row_height = ui.text_style_height(&egui::TextStyle::Body);
+
+                let messages = self.client.msg_history();
+                egui::ScrollArea::vertical()
+                    .stick_to_bottom(true)
+                    .show_rows(ui, row_height, messages.len(), |ui, row_range| {
+                        for i in row_range {
+                            let msg = &messages[i];
+                            ui.horizontal(|ui| {
+                                ui.label(format!("{:?}", msg));
+                                ui.allocate_space(egui::vec2(ui.available_width(), 0.0));
+                            });
+
+                            ui.allocate_space(egui::vec2(
+                                0.0,
+                                row_height - ui.text_style_height(&egui::TextStyle::Body),
+                            ));
+                        }
+                    });
+            });
+        });
+    }
     fn draw_position(
         &mut self,
         best_bid: Option<u64>,
@@ -286,6 +314,7 @@ impl Running {
             }
         });
 
+        self.draw_messages(ui);
         // let debug = egui::Label::new(format!("{:?}", self.client).to_string()).wrap();
         // ui.add(debug);
 
