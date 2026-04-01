@@ -97,15 +97,16 @@ impl Client {
                 .order_book
                 .get_order(*order_id)
                 .expect("uh oh we've hallucinated an order fuck");
-
-            let action = ClientAction::CancelOrder {
-                order_id: *order_id,
-            };
-            let message = ClientMessage {
-                exchange_id,
-                action,
-            };
-            self.ws_tx.send(message);
+            if order.price() == price {
+                let action = ClientAction::CancelOrder {
+                    order_id: *order_id,
+                };
+                let message = ClientMessage {
+                    exchange_id,
+                    action,
+                };
+                self.ws_tx.send(message);
+            }
         }
         Some(())
     }
