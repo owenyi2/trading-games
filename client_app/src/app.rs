@@ -251,6 +251,34 @@ impl Running {
             cash, position, net
         ));
     }
+    fn draw_our_orders(&self, exchange_id: ExchangeId, ui: &mut egui::Ui) {
+        let height = 150.0;
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.set_min_height(height);
+            ui.label("Our Orders");
+            let row_height = ui.text_style_height(&egui::TextStyle::Body);
+
+            let our_orders = self.client.our_orders(exchange_id).unwrap_or(Vec::new());
+            // Consider sorting our orders because otherwise the order is whatever arbitrary order the HashSet returns
+            egui::ScrollArea::vertical()
+                .id_source(exchange_id)
+                .stick_to_bottom(true)
+                .max_height(height)
+                .show_rows(ui, row_height, our_orders.len(), |ui, row_range| {
+                    for i in row_range {
+                        let order = &our_orders[i];
+                        ui.horizontal(|ui| {
+                            ui.label(format!("{:?}", order));
+                        });
+
+                        ui.allocate_space(egui::vec2(
+                            0.0,
+                            row_height - ui.text_style_height(&egui::TextStyle::Body),
+                        ));
+                    }
+                });
+        });
+    }
 
     fn parse_command(input: &str) -> Option<InternalAction> {
         let parts: Vec<&str> = input.trim().split_whitespace().collect();
@@ -309,6 +337,7 @@ impl Running {
                         Self::draw_orderbook(ui, format!("orderbook_{}", exchange_id), bids, asks);
                         self.draw_position(best_bid, best_ask, cash, position, ui);
                         self.draw_command_input(exchange_id, ui);
+                        self.draw_our_orders(exchange_id, ui);
                     })
                 });
             }

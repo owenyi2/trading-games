@@ -93,10 +93,7 @@ impl Client {
     pub fn cancel_level(&self, exchange_id: ExchangeId, price: Price) -> Option<()> {
         let book = self.books.get(&exchange_id)?;
         for order_id in &book.our_orders {
-            let order = self
-                .books
-                .get(&exchange_id)
-                .expect("unknown `exchange_id`")
+            let order = book
                 .order_book
                 .get_order(*order_id)
                 .expect("uh oh we've hallucinated an order fuck");
@@ -151,8 +148,6 @@ impl Client {
             exchange_id,
             action,
         };
-
-        // TODO track our orders
         self.ws_tx.send(message);
     }
 
@@ -194,6 +189,17 @@ impl Client {
     }
     pub fn account_id(&self) -> Option<AccountId> {
         self.account_id
+    }
+    pub fn our_orders(&self, exchange_id: ExchangeId) -> Option<Vec<&Order>> {
+        let book = self.books.get(&exchange_id)?;
+
+        let orders: Vec<&Order> = book
+            .our_orders
+            .iter()
+            .filter_map(|order_id| book.order_book.get_order(*order_id))
+            .collect();
+
+        Some(orders)
     }
 }
 
