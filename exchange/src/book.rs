@@ -62,6 +62,18 @@ impl OrderBook {
         }
         return None;
     }
+    pub fn best_price(&self, side: Side) -> Option<(Price, Quantity)> {
+        match side {
+            Side::Bid => {
+                let best_bid_level = self.bids.last()?;
+                Some((best_bid_level.price, best_bid_level.total_volume))
+            }
+            Side::Ask => {
+                let best_ask_level = self.asks.last()?;
+                Some((best_ask_level.price, best_ask_level.total_volume))
+            }
+        }
+    }
 
     pub fn best_order(&self, side: Side) -> Option<OrderId> {
         match side {

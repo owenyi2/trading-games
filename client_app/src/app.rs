@@ -66,6 +66,7 @@ impl MainMenu {
 struct Running {
     client: Client,
     command_strs: HashMap<ExchangeId, String>,
+    volume_preset: HashMap<ExchangeId, Quantity>,
 }
 impl Running {
     fn try_from_main_menu(state: &mut MainMenu) -> Option<Self> {
@@ -88,6 +89,7 @@ impl Running {
         Some(Running {
             client,
             command_strs: HashMap::new(),
+            volume_preset: HashMap::new(),
         })
     }
 }
@@ -123,10 +125,13 @@ enum InternalAction {
         price: Price,
         qty: Quantity,
     },
+    Hit,
+    Lift,
     CancelLevel {
         price: Price,
     },
     CancelAll,
+    SetVolume(Quantity),
 }
 
 impl Running {
@@ -185,11 +190,18 @@ impl Running {
             .entry(exchange_id)
             .or_insert_with(|| String::new());
         let response = ui.add(egui::TextEdit::singleline(user_command));
+        let command = user_command.clone();
         if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-            if let Some(command) = Self::parse_command(user_command) {
+            if let Some(command) = self.parse_command(&command, exchange_id) {
                 match command {
                     InternalAction::InsertOrder { side, price, qty } => {
                         self.client.limit_order(exchange_id, side, price, qty);
+                    }
+                    InternalAction::Hit => {
+                        self.client.hit_best_bid(exchange_id);
+                    }
+                    InternalAction::Lift => {
+                        self.client.lift_best_ask(exchange_id);
                     }
                     InternalAction::CancelAll => {
                         self.client.cancel_all(exchange_id);
@@ -197,8 +209,16 @@ impl Running {
                     InternalAction::CancelLevel { price } => {
                         self.client.cancel_level(exchange_id, price);
                     }
+                    InternalAction::SetVolume(qty) => {
+                        *self.volume_preset.entry(exchange_id).or_insert(1) = qty;
+                    }
                 }
             }
+
+            let user_command = self
+                .command_strs
+                .entry(exchange_id)
+                .or_insert_with(|| String::new());
             user_command.clear();
         }
     }
@@ -246,22 +266,17 @@ impl Running {
             }
         }
         fn format_event_row(
-            event: &(ExchangeId, ExchangeEvent)
+            event: &(ExchangeId, ExchangeEvent),
         ) -> (String, String, String, String, String) {
             let (exchange_id, event) = event;
             match event {
-                ExchangeEvent::Cancel {
-                    order_id,
-                    id,
-                } => 
-                    (
-                        exchange_id.to_string(),
-                        "Cancel".to_string(),
-                        id.to_string(),
-                        order_id.to_string(),
-                        "".to_string()
-                        )
-                ,
+                ExchangeEvent::Cancel { order_id, id } => (
+                    exchange_id.to_string(),
+                    "Cancel".to_string(),
+                    id.to_string(),
+                    order_id.to_string(),
+                    "".to_string(),
+                ),
                 ExchangeEvent::Insert {
                     price,
                     qty,
@@ -273,10 +288,7 @@ impl Running {
                     "Insert".to_string(),
                     id.to_string(),
                     order_id.to_string(),
-                    format!(
-                        "price={}\tvolume={}\tside={}",
-                        price, qty, side 
-                    ),
+                    format!("price={}\tvolume={}\tside={}", price, qty, side),
                 ),
                 ExchangeEvent::Trade {
                     ask_id,
@@ -289,15 +301,10 @@ impl Running {
                     "Trade".to_string(),
                     id.to_string(),
                     format!("bid={}\task={}", bid_id, ask_id),
-                    format!(
-                        "price={}\tvolume={}", 
-                        trade_price, trade_volume 
-                    ),
-
-                    ),
-                
+                    format!("price={}\tvolume={}", trade_price, trade_volume),
+                ),
             }
-        } 
+        }
 
         let height = 200.0;
         ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
@@ -407,9 +414,7 @@ impl Running {
                                 });
                             });
                     });
-
                 });
-
             });
         });
     }
@@ -463,19 +468,32 @@ impl Running {
         });
     }
 
-    fn parse_command(input: &str) -> Option<InternalAction> {
+    fn parse_command(&self, input: &str, exchange_id: ExchangeId) -> Option<InternalAction> {
         let parts: Vec<&str> = input.trim().split_whitespace().collect();
         match parts.as_slice() {
+            ["hit"] | ["yours"] => Some(InternalAction::Hit),
+            ["lift"] | ["mine"] => Some(InternalAction::Lift),
             ["bid", price, qty] => Some(InternalAction::InsertOrder {
                 side: Side::Bid,
                 price: price.parse().ok()?,
                 qty: qty.parse().ok()?,
+            }),
+            ["bid", price] => Some(InternalAction::InsertOrder {
+                side: Side::Bid,
+                price: price.parse().ok()?,
+                qty: *self.volume_preset.get(&exchange_id).unwrap_or(&1),
             }),
             ["ask", price, qty] => Some(InternalAction::InsertOrder {
                 side: Side::Ask,
                 price: price.parse().ok()?,
                 qty: qty.parse().ok()?,
             }),
+            ["ask", price] => Some(InternalAction::InsertOrder {
+                side: Side::Ask,
+                price: price.parse().ok()?,
+                qty: *self.volume_preset.get(&exchange_id).unwrap_or(&1),
+            }),
+            ["volume", qty] => Some(InternalAction::SetVolume(qty.parse().ok()?)),
             ["cancel", price] => Some(InternalAction::CancelLevel {
                 price: price.parse().ok()?,
             }),

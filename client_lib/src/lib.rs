@@ -152,7 +152,46 @@ impl Client {
         };
         self.ws_tx.send(message);
     }
+    fn best_price(&self, exchange_id: ExchangeId, side: Side) -> Option<(Price, Quantity)> {
+        let book = self.books.get(&exchange_id)?;
+        book.order_book.best_price(side) 
+    }
+    pub fn hit_best_bid(&mut self, exchange_id: ExchangeId) -> Option<()> {
+        let (price, qty) = self.best_price(exchange_id, Side::Bid)?;
 
+        let client_order_id = self.client_order_id_counter;
+        self.client_order_id_counter += 1;
+        let action = ClientAction::InsertOrder {
+            side: false,
+            price: price,
+            qty: qty,
+            client_order_id,
+        };
+        let message = ClientMessage {
+            exchange_id,
+            action,
+        };
+        self.ws_tx.send(message);
+        Some(())
+    }
+    pub fn lift_best_ask(&mut self, exchange_id: ExchangeId) -> Option<()> {
+        let (price, qty) = self.best_price(exchange_id, Side::Ask)?;
+
+        let client_order_id = self.client_order_id_counter;
+        self.client_order_id_counter += 1;
+        let action = ClientAction::InsertOrder {
+            side: true,
+            price: price,
+            qty: qty,
+            client_order_id,
+        };
+        let message = ClientMessage {
+            exchange_id,
+            action,
+        };
+        self.ws_tx.send(message);
+        Some(())
+    }
     pub fn update(&mut self) {
         while let Ok(server_msg) = self.ws_rx.try_recv() {
             match server_msg {
