@@ -202,31 +202,214 @@ impl Running {
             user_command.clear();
         }
     }
+
     fn draw_messages(&mut self, ui: &mut egui::Ui) {
+        fn format_message_row(
+            msg: &(ExchangeId, ExchangePrivateMessage),
+        ) -> (String, String, String, String, String) {
+            let (exchange_id, msg) = msg;
+            match msg {
+                ExchangePrivateMessage::InsertConfirm {
+                    client_order_id,
+                    order_id,
+                    id,
+                } => (
+                    exchange_id.to_string(),                        // Column 1: Exhg. Id
+                    "Insert".to_string(),                           // Column 2: Act.
+                    id.to_string(),                                 // Column 3: Event Id
+                    order_id.to_string(),                           // Column 4: Order Id
+                    format!("client_order_id={}", client_order_id), // Column 5: Info
+                ),
+                ExchangePrivateMessage::CancelConfirm { order_id, id } => (
+                    exchange_id.to_string(),
+                    "Cancel".to_string(),
+                    id.to_string(),
+                    order_id.to_string(),
+                    "".to_string(), // No extra info
+                ),
+                ExchangePrivateMessage::TradeConfirm {
+                    order_id,
+                    trade_price,
+                    trade_volume,
+                    side,
+                    id,
+                } => (
+                    exchange_id.to_string(),
+                    "Trade".to_string(),
+                    id.to_string(),
+                    order_id.to_string(),
+                    format!(
+                        "price={} volume={} side={}",
+                        trade_price, trade_volume, side
+                    ),
+                ),
+            }
+        }
+        fn format_event_row(
+            event: &(ExchangeId, ExchangeEvent)
+        ) -> (String, String, String, String, String) {
+            let (exchange_id, event) = event;
+            match event {
+                ExchangeEvent::Cancel {
+                    order_id,
+                    id,
+                } => 
+                    (
+                        exchange_id.to_string(),
+                        "Cancel".to_string(),
+                        id.to_string(),
+                        order_id.to_string(),
+                        "".to_string()
+                        )
+                ,
+                ExchangeEvent::Insert {
+                    price,
+                    qty,
+                    side,
+                    order_id,
+                    id,
+                } => (
+                    exchange_id.to_string(),
+                    "Insert".to_string(),
+                    id.to_string(),
+                    order_id.to_string(),
+                    format!(
+                        "price={}\tvolume={}\tside={}",
+                        price, qty, side 
+                    ),
+                ),
+                ExchangeEvent::Trade {
+                    ask_id,
+                    bid_id,
+                    trade_price,
+                    trade_volume,
+                    id,
+                } => (
+                    exchange_id.to_string(),
+                    "Trade".to_string(),
+                    id.to_string(),
+                    format!("bid={}\task={}", bid_id, ask_id),
+                    format!(
+                        "price={}\tvolume={}", 
+                        trade_price, trade_volume 
+                    ),
+
+                    ),
+                
+            }
+        } 
+
         let height = 200.0;
         ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
-            egui::Frame::group(ui.style()).show(ui, |ui| {
-                ui.set_min_height(height);
-                ui.label("Message History");
-                let row_height = ui.text_style_height(&egui::TextStyle::Body);
+            ui.horizontal(|ui| {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        let messages = self.client.msg_history();
+                        egui_extras::TableBuilder::new(ui)
+                            .id_source("message history")
+                            .stick_to_bottom(true)
+                            .column(egui_extras::Column::exact(80.))
+                            .column(egui_extras::Column::exact(80.))
+                            .column(egui_extras::Column::exact(80.))
+                            .column(egui_extras::Column::exact(80.))
+                            .column(egui_extras::Column::exact(200.))
+                            .header(28.0, |mut header| {
+                                header.col(|ui| {
+                                    ui.label("Exchange Id");
+                                });
+                                header.col(|ui| {
+                                    ui.label("Action");
+                                });
+                                header.col(|ui| {
+                                    ui.label("Event Id");
+                                });
+                                header.col(|ui| {
+                                    ui.label("Order Id");
+                                });
+                                header.col(|ui| {
+                                    ui.label("Info");
+                                });
+                            })
+                            .body(|mut body| {
+                                body.rows(18.0, messages.len(), |mut row| {
+                                    let i = row.index();
+                                    let (exhg_id, act, event_id, order_id, info) =
+                                        format_message_row(&messages[i]);
 
-                let messages = self.client.msg_history();
-                egui::ScrollArea::vertical()
-                    .stick_to_bottom(true)
-                    .show_rows(ui, row_height, messages.len(), |ui, row_range| {
-                        for i in row_range {
-                            let msg = &messages[i];
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{:?}", msg));
-                                ui.allocate_space(egui::vec2(ui.available_width(), 0.0));
+                                    row.col(|ui| {
+                                        ui.label(exhg_id);
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(act);
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(event_id);
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(order_id);
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(info);
+                                    });
+                                });
                             });
-
-                            ui.allocate_space(egui::vec2(
-                                0.0,
-                                row_height - ui.text_style_height(&egui::TextStyle::Body),
-                            ));
-                        }
                     });
+                });
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        let events = self.client.event_history();
+                        egui_extras::TableBuilder::new(ui)
+                            .id_source("event history")
+                            .stick_to_bottom(true)
+                            .column(egui_extras::Column::exact(80.))
+                            .column(egui_extras::Column::exact(80.))
+                            .column(egui_extras::Column::exact(80.))
+                            .column(egui_extras::Column::exact(80.))
+                            .column(egui_extras::Column::exact(200.))
+                            .header(28.0, |mut header| {
+                                header.col(|ui| {
+                                    ui.label("Exchange Id");
+                                });
+                                header.col(|ui| {
+                                    ui.label("Action");
+                                });
+                                header.col(|ui| {
+                                    ui.label("Event Id");
+                                });
+                                header.col(|ui| {
+                                    ui.label("Order Id");
+                                });
+                                header.col(|ui| {
+                                    ui.label("Info");
+                                });
+                            })
+                            .body(|mut body| {
+                                body.rows(18.0, events.len(), |mut row| {
+                                    let i = row.index();
+                                    let (exhg_id, act, event_id, order_id, info) =
+                                        format_event_row(&events[i]);
+
+                                    row.col(|ui| {
+                                        ui.label(exhg_id);
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(act);
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(event_id);
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(order_id);
+                                    });
+                                    row.col(|ui| {
+                                        ui.label(info);
+                                    });
+                                });
+                            });
+                    });
+
+                });
+
             });
         });
     }

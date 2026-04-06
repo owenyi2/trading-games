@@ -22,7 +22,8 @@ pub struct Client {
     client_order_id_counter: u64,
     start: bool,
 
-    msg_history: Vec<ServerMessage>,
+    event_history: Vec<(u64, ExchangeEvent)>,
+    msg_history: Vec<(u64, ExchangePrivateMessage)>,
 
     ws_thread: JoinHandle<tungstenite::WebSocket<MaybeTlsStream<TcpStream>>>,
 }
@@ -69,6 +70,7 @@ impl Client {
             client_order_id_counter: 0,
             account_id: None,
             start: false,
+            event_history: Vec::new(),
             msg_history: Vec::new(),
             ws_thread,
         }
@@ -154,13 +156,15 @@ impl Client {
     pub fn update(&mut self) {
         while let Ok(server_msg) = self.ws_rx.try_recv() {
             match server_msg {
-                ServerMessage::Event(id, ref event) => {
+                ServerMessage::Event(id, event) => {
                     let book = self.books.get_mut(&id).unwrap();
-                    book.handle_exchange_event(event);
+                    book.handle_exchange_event(&event);
+                    self.event_history.push((id, event));
                 }
-                ServerMessage::Private(id, ref private_msg) => {
+                ServerMessage::Private(id, private_msg) => {
                     let book = self.books.get_mut(&id).unwrap();
-                    book.handle_exchange_private_message(private_msg);
+                    book.handle_exchange_private_message(&private_msg);
+                    self.msg_history.push((id, private_msg));
                 }
                 ServerMessage::System(ref msg) => match msg {
                     SystemMessage::Start => {
@@ -178,11 +182,13 @@ impl Client {
                     }
                 },
             }
-            self.msg_history.push(server_msg);
         }
     }
-    pub fn msg_history(&self) -> &[ServerMessage] {
+    pub fn msg_history(&self) -> &[(u64, ExchangePrivateMessage)] {
         &self.msg_history
+    }
+    pub fn event_history(&self) -> &[(u64, ExchangeEvent)] {
+        &self.event_history
     }
     pub fn books(&self) -> &HashMap<ExchangeId, ClientOrderBook> {
         &self.books
